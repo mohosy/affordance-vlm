@@ -2,6 +2,9 @@
 
 > Frontier VLMs can identify objects. They cannot yet reliably tell a robot **where on an object to grab it** or **what action that part affords**. This repo shows the gap — and closes it with a 7B fine-tune.
 
+**🌐 Live site:** [affordance-vlm.vercel.app](https://affordance-vlm.vercel.app) — interactive demo + thesis.
+**📖 Free fine-tuning path:** [`training/FREE_FINETUNING.md`](training/FREE_FINETUNING.md) — Colab / Kaggle, no RunPod required.
+
 **Status:** 🚧 Hackathon project (Caltech × Ironsite — *Spatial Intelligence in the Physical World*). 36-hour build.
 
 ---
@@ -131,6 +134,8 @@ python eval/run_baselines.py \
 ```
 
 ### 5. Phase 4 — fine-tune Qwen2.5-VL-7B
+
+> **No GPU budget?** See [`training/FREE_FINETUNING.md`](training/FREE_FINETUNING.md) for free Colab / Kaggle paths.
 
 Run on RunPod or any A100 80GB / H100:
 
