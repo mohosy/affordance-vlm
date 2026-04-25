@@ -4,6 +4,7 @@
 # Large data files
 data/raw/
 data/frames/
+data/sequences/
 data/masks/
 data/depth/
 data/hova/

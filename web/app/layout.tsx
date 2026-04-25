@@ -5,13 +5,13 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
-  title: "affordance-vlm — part-level affordance grounding for embodied AI",
+  title: "affordance-vlm — temporal reasoning on construction body-cam footage",
   description:
-    "Frontier VLMs fail at telling a robot which part of an object to grip. We close the gap with a Qwen2.5-VL LoRA fine-tune on HOVA-500K.",
+    "Frontier VLMs see one frame at a time. Construction is temporal. We close the gap with a Qwen2.5-VL multi-frame LoRA fine-tune on Ironsite footage.",
   openGraph: {
     title: "affordance-vlm",
     description:
-      "Frontier VLMs fail at part-level affordance grounding. We close the gap.",
+      "Frontier VLMs are fundamentally static. Construction is temporal. We close the gap.",
     url: "https://affordance-vlm.vercel.app",
     siteName: "affordance-vlm",
     type: "website",
@@ -20,7 +20,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "affordance-vlm",
     description:
-      "Frontier VLMs fail at part-level affordance grounding. We close the gap.",
+      "Frontier VLMs are fundamentally static. Construction is temporal. We close the gap.",
   },
 };
 

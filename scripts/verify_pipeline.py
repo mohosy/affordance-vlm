@@ -75,6 +75,7 @@ class _Skip(Exception):
 
 
 def check_imports() -> None:
+    # legacy HOVA pipeline
     import data_pipeline.annotations  # noqa: F401
     import data_pipeline.gemini_client  # noqa: F401
     import data_pipeline.generate_qa  # noqa: F401
@@ -83,6 +84,12 @@ def check_imports() -> None:
     import eval.judge  # noqa: F401
     import eval.run_baselines  # noqa: F401
     import eval.build_heldout  # noqa: F401
+    # Big Swing temporal pipeline
+    import data_pipeline.extract_frames  # noqa: F401
+    import data_pipeline.build_sequences  # noqa: F401
+    import data_pipeline.generate_qa_temporal  # noqa: F401
+    import eval.run_baselines_temporal  # noqa: F401
+    import eval.build_heldout_temporal  # noqa: F401
 
 
 def check_annotations_present() -> None:
@@ -198,6 +205,72 @@ def check_eval_helpers() -> None:
     expected = {"gemini-2.5-pro", "claude-opus-4-7", "gpt-4o", "qwen-base", "qwen-finetuned"}
     assert expected.issubset(ADAPTERS.keys()), f"missing adapters: {expected - ADAPTERS.keys()}"
 
+    from eval.run_baselines_temporal import ADAPTERS as TADAPTERS
+    assert expected.issubset(TADAPTERS.keys()), \
+        f"temporal adapters missing: {expected - TADAPTERS.keys()}"
+
+
+def check_videos_present() -> None:
+    raw = ROOT / "data" / "raw"
+    if not raw.exists():
+        raise _Skip(f"{raw} not present (Ironsite videos)")
+    videos = list(raw.glob("*.mp4"))
+    if len(videos) == 0:
+        raise _Skip("no .mp4 files under data/raw")
+    assert len(videos) >= 1, f"expected >= 1 mp4, got {len(videos)}"
+
+
+def check_frames_extracted() -> None:
+    manifest = ROOT / "data" / "frames" / "manifest.jsonl"
+    if not manifest.exists():
+        raise _Skip(f"frame manifest not generated yet: {manifest}")
+    n = 0
+    with manifest.open() as f:
+        for _ in f:
+            n += 1
+    assert n >= 100, f"expected many frames, got {n}"
+
+
+def check_sequences_built() -> None:
+    seq_path = ROOT / "data" / "sequences" / "sequences.jsonl"
+    if not seq_path.exists():
+        raise _Skip(f"sequences not built yet: {seq_path}")
+    import json as _json
+    with seq_path.open() as f:
+        first = _json.loads(f.readline())
+    assert "frames" in first and len(first["frames"]) >= 2, "sequence has <2 frames"
+    assert "sequence_id" in first
+
+
+def check_temporal_prompt_assembly() -> None:
+    """Build a fake sequence and exercise the prompt building path."""
+    seq_path = ROOT / "data" / "sequences" / "sequences.jsonl"
+    if not seq_path.exists():
+        raise _Skip("sequences not built yet")
+    import json as _json
+    from data_pipeline.generate_qa_temporal import _build_user_text, SYSTEM_INSTRUCTION
+    with seq_path.open() as f:
+        seq = _json.loads(f.readline())
+    text = _build_user_text(seq, n_pairs=3)
+    assert "chronological frames" in text
+    assert "construction body cam" in text
+    assert "exactly 3" in text
+    assert "object_permanence" in SYSTEM_INSTRUCTION
+    assert "tracking" in SYSTEM_INSTRUCTION
+    assert "occlusion" in SYSTEM_INSTRUCTION
+
+
+def check_training_config() -> None:
+    from pathlib import Path as _P
+    cfg_path = _P("training/configs/lora.yaml")
+    if not cfg_path.exists():
+        raise _Skip(f"{cfg_path} missing")
+    from training.finetune_qwen import load_config
+    cfg = load_config(cfg_path)
+    assert "Qwen2.5-VL" in cfg.base_model, f"unexpected base model: {cfg.base_model}"
+    assert cfg.lora_r > 0
+    assert cfg.train_file.endswith(".jsonl")
+
 
 def check_gemini_client_constructable() -> None:
     from data_pipeline.gemini_client import GeminiClient
@@ -259,7 +332,14 @@ def main() -> int:
     c.run("GeminiClient", check_gemini_client_constructable)
     c.run("Judge (Anthropic)", check_anthropic_client_constructable)
 
-    print("\n[6] repo hygiene")
+    print("\n[6] Big Swing pipeline (temporal)")
+    c.run("Ironsite videos present", check_videos_present)
+    c.run("frames extracted (manifest.jsonl)", check_frames_extracted)
+    c.run("sequences built", check_sequences_built)
+    c.run("temporal prompt assembly", check_temporal_prompt_assembly)
+    c.run("training config loads", check_training_config)
+
+    print("\n[7] repo hygiene")
     c.run("no .env tracked + data/hova not tracked", check_repo_hygiene)
 
     rc = c.report()

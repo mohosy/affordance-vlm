@@ -1,8 +1,6 @@
 import DemoCard from "@/components/DemoCard";
 
 const REPO_URL = "https://github.com/mohosy/affordance-vlm";
-const DATASET_URL = "https://huggingface.co/datasets/JiaaZ/HOVA-500K";
-const PAPER_URL = "https://arxiv.org/abs/2505.11865";
 
 export default function Home() {
   return (
@@ -40,30 +38,26 @@ export default function Home() {
             Caltech × Ironsite — Spatial Intelligence in the Physical World
           </div>
           <h1 className="max-w-4xl text-5xl font-semibold leading-tight tracking-tight md:text-6xl lg:text-7xl">
-            <span className="gradient-text">Frontier VLMs can&rsquo;t tell a robot</span>
+            <span className="gradient-text">
+              Frontier VLMs see the world{" "}
+            </span>
             <br />
-            <span className="text-chalk">where to grab a hammer.</span>
+            <span className="text-chalk">one frame at a time.</span>
           </h1>
           <p className="mt-8 max-w-2xl text-lg text-zinc-400 md:text-xl">
-            They recognize the hammer. They can describe it in detail. But ask
-            them <span className="text-chalk">which end the gripper should close on</span> — and
-            they fail. We close the gap with a 7B fine-tune on{" "}
-            <a
-              href={DATASET_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="underline decoration-zinc-700 underline-offset-4 hover:decoration-chalk"
-            >
-              HOVA-500K
-            </a>
-            .
+            Construction is a <span className="text-chalk">temporal</span>{" "}
+            activity. Workers move, occlude, set things down, pick them back
+            up. We show that Gemini 2.5 Pro, Claude Opus 4.7, and GPT-4o
+            catastrophically fail at maintaining a persistent belief over
+            scene state across body-cam motion. Then we close the gap with a{" "}
+            <span className="text-chalk">7B fine-tune on Ironsite&rsquo;s own footage</span>.
           </p>
           <div className="mt-10 flex flex-wrap gap-3">
             <a
               href="#demo"
               className="rounded-md bg-chalk px-5 py-3 text-sm font-medium text-ink hover:bg-zinc-200"
             >
-              Try the demo →
+              See it live →
             </a>
             <a
               href={REPO_URL}
@@ -71,7 +65,7 @@ export default function Home() {
               rel="noreferrer"
               className="rounded-md border border-zinc-700 px-5 py-3 text-sm hover:border-chalk"
             >
-              View source on GitHub
+              Source on GitHub
             </a>
           </div>
         </div>
@@ -86,27 +80,33 @@ export default function Home() {
                 01 — Thesis
               </p>
               <h2 className="mt-3 text-3xl font-semibold tracking-tight">
-                Object recognition is solved. Part-level affordance grounding isn&rsquo;t.
+                The biggest spatial gap isn&rsquo;t object recognition. It&rsquo;s memory.
               </h2>
             </div>
           </div>
           <div className="md:col-span-2 space-y-6 text-lg text-zinc-300">
             <p>
-              Modern VLMs are excellent at telling you{" "}
-              <em>what an object is</em>. They are surprisingly bad at telling
-              you <em>which part of it does what</em> — the kind of question a
-              robot has to answer before it can act.
+              Frontier VLMs were trained on captioned images. Even when you
+              feed them a video, they answer as if they only saw a single
+              frame. Ask them <em>where is the wrench the worker just put
+              down</em> — they say &ldquo;I don&rsquo;t see a wrench.&rdquo;
+              Because they&rsquo;re looking at frame 5, where the wrench is
+              now off-screen.
             </p>
             <p>
-              In an embodied AI loop, a planner needs to know: which part to
-              grasp, which part affords the action, where the geometry of the
-              tool comes from. Frontier models trained on web text and image-caption
-              pairs don&rsquo;t see enough of this signal to reliably ground it.
+              Body-cam construction footage exposes this gap brutally.
+              Workers turn. Hands occlude. Tools land on benches and stay
+              there for a minute before getting picked back up. Pipes get
+              walked past. The fish-eye lens distorts everything. None of
+              this is in the typical VLM training distribution.
             </p>
             <p className="text-zinc-400">
-              The bet: a small open model fine-tuned on a few thousand
-              ground-truth-anchored Q&amp;A pairs can beat a 200B+ frontier
-              model on this narrow task.
+              We attack five problems from Ironsite&rsquo;s spatial-intelligence
+              list at once: <span className="text-chalk">temporal reasoning</span>,{" "}
+              <span className="text-chalk">object permanence</span>,{" "}
+              <span className="text-chalk">occlusion reasoning</span>,{" "}
+              <span className="text-chalk">partial observability</span>, and{" "}
+              <span className="text-chalk">generalization to real-world environments</span>.
             </p>
           </div>
         </div>
@@ -120,7 +120,7 @@ export default function Home() {
               02 — Method
             </p>
             <h2 className="mt-3 text-3xl font-semibold tracking-tight">
-              Ground-truth-anchored Q&amp;A &nbsp;→&nbsp; LoRA &nbsp;→&nbsp; honest eval.
+              Multi-frame Q&amp;A. Multi-image LoRA. Multi-axis judged eval.
             </h2>
           </div>
 
@@ -128,55 +128,48 @@ export default function Home() {
             {[
               {
                 tag: "Step 1",
-                title: "Source the truth",
+                title: "Sample frames",
                 body: (
                   <>
-                    <a
-                      href={DATASET_URL}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="underline decoration-zinc-700 underline-offset-4 hover:decoration-chalk"
-                    >
-                      HOVA-500K
-                    </a>
-                    {" "}provides 500K images with{" "}
-                    <span className="text-chalk">
-                      object + action + Gaussian affordance mask
-                    </span>{" "}
-                    annotations across 1,726 objects and 675 actions.
+                    6 Ironsite body-cam clips × ~20 min each. ffmpeg samples at
+                    0.5 Hz → <span className="text-chalk">3,624 frames</span>.
                   </>
                 ),
               },
               {
                 tag: "Step 2",
-                title: "Generate grounded Q&A",
+                title: "Build sequences",
                 body: (
                   <>
-                    For each annotation, prompt Gemini 2.5 Pro with the image
-                    plus the ground-truth label. Mask grounds the answer — the
-                    model can&rsquo;t hallucinate the affordance location.
+                    Group consecutive frames into 5-frame windows (10-second
+                    spans of activity). Hold out clip 12 for eval — model
+                    never sees it during training.
+                    <span className="block mt-2 text-xs text-zinc-500">
+                      603 train + 121 holdout sequences
+                    </span>
                   </>
                 ),
               },
               {
                 tag: "Step 3",
-                title: "Self-consistency filter",
+                title: "Generate temporal Q&A",
                 body: (
                   <>
-                    Re-prompt without the grounding hint. A judge call
-                    discards pairs where the answers disagree. ~40% of raw
-                    pairs survive.
+                    Gemini 2.5 Pro sees all 5 frames + a strict instruction:
+                    &ldquo;questions answerable from a single frame are{" "}
+                    <span className="text-chalk">bad questions</span>.&rdquo; ~1,800
+                    grounded multi-frame pairs.
                   </>
                 ),
               },
               {
                 tag: "Step 4",
-                title: "LoRA + judged eval",
+                title: "LoRA + multi-axis judge",
                 body: (
                   <>
-                    Fine-tune Qwen2.5-VL-7B with LoRA (rank 16, α 32). Compare
-                    to frontier baselines on a hand-verified held-out set,
-                    scored by Claude Opus 4.7 with a strict rubric.
+                    LoRA-fine-tune Qwen2.5-VL-7B on multi-image inputs (Vultr
+                    A40, ~$8). Eval all four models on five problem axes;
+                    score with Claude Opus 4.7.
                   </>
                 ),
               },
@@ -198,21 +191,71 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ---------- demo ---------- */}
-      <section id="demo" className="border-b border-zinc-800">
+      {/* ---------- problems we attack ---------- */}
+      <section className="border-b border-zinc-800">
         <div className="mx-auto max-w-6xl px-6 py-24">
           <div className="mb-12">
             <p className="font-mono text-xs uppercase tracking-widest text-zinc-500">
-              03 — Demo
+              03 — Five problems, one project
             </p>
             <h2 className="mt-3 text-3xl font-semibold tracking-tight">
-              Ask a part-level affordance question. See the gap.
+              Each axis maps to a real Ironsite use case.
+            </h2>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+            {[
+              {
+                tag: "Temporal reasoning",
+                use: "How did the worker&rsquo;s hand path change over the last 10 seconds?",
+              },
+              {
+                tag: "Object permanence",
+                use: "Where did the worker last set down the pipe wrench?",
+              },
+              {
+                tag: "Occlusion reasoning",
+                use: "What is hidden behind the gloved hand in this frame, given later frames?",
+              },
+              {
+                tag: "Partial observability",
+                use: "Based on the worker&rsquo;s posture, what tool are they about to reach for?",
+              },
+              {
+                tag: "Real-world generalization",
+                use: "Fish-eye, low-light, cluttered — does the model still parse the scene?",
+              },
+            ].map((p, i) => (
+              <div
+                key={i}
+                className="rounded-lg border border-zinc-800 bg-zinc-900/20 p-5"
+              >
+                <p className="font-mono text-xs text-accent">{p.tag}</p>
+                <p
+                  className="mt-3 text-sm text-zinc-400"
+                  dangerouslySetInnerHTML={{ __html: `&ldquo;${p.use}&rdquo;` }}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ---------- demo ---------- */}
+      <section id="demo" className="border-b border-zinc-800 bg-zinc-950/30">
+        <div className="mx-auto max-w-6xl px-6 py-24">
+          <div className="mb-12">
+            <p className="font-mono text-xs uppercase tracking-widest text-zinc-500">
+              04 — Demo
+            </p>
+            <h2 className="mt-3 text-3xl font-semibold tracking-tight">
+              Upload a body-cam frame. Watch frontier models lose context.
             </h2>
             <p className="mt-3 max-w-2xl text-zinc-400">
-              Upload an image of an object and ask which part to interact with
-              and why. The frontier-model answers come from live API calls.
-              The fine-tuned Qwen column lights up after Phase 4 of the
-              hackathon.
+              The single-frame demo below shows the OOD failure mode on its
+              own — frontier models often misread fish-eye body-cam frames
+              even before we get to temporal questions. The full multi-frame
+              demo unlocks after Phase 4 fine-tuning lands on HuggingFace
+              Spaces.
             </p>
           </div>
           <DemoCard />
@@ -220,19 +263,19 @@ export default function Home() {
       </section>
 
       {/* ---------- results ---------- */}
-      <section id="results" className="border-b border-zinc-800 bg-zinc-950/30">
+      <section id="results" className="border-b border-zinc-800">
         <div className="mx-auto max-w-6xl px-6 py-24">
           <div className="mb-10">
             <p className="font-mono text-xs uppercase tracking-widest text-zinc-500">
-              04 — Results
+              05 — Results
             </p>
             <h2 className="mt-3 text-3xl font-semibold tracking-tight">
-              Numbers go here. Honestly.
+              Multi-axis scorecard. Numbers go here, honestly.
             </h2>
             <p className="mt-3 max-w-2xl text-zinc-400">
-              Phase 4 outputs land here. We will report the actual judge scores
-              from the held-out set as they come in — no cherry-picking, no
-              re-running until the bar moves.
+              Phase 4 outputs land here. Held-out clip 12 is never seen during
+              training. We will report the actual judge scores per axis as
+              they come in.
             </p>
           </div>
 
@@ -240,44 +283,40 @@ export default function Home() {
             <table className="w-full text-sm">
               <thead className="bg-zinc-900/60 text-left text-xs uppercase tracking-widest text-zinc-500">
                 <tr>
-                  <th className="px-6 py-4">Model</th>
-                  <th className="px-6 py-4">Mean score</th>
-                  <th className="px-6 py-4">Full credit</th>
-                  <th className="px-6 py-4">Partial</th>
-                  <th className="px-6 py-4">Wrong</th>
+                  <th className="px-4 py-4">Model</th>
+                  <th className="px-4 py-4">Mean</th>
+                  <th className="px-4 py-4">Permanence</th>
+                  <th className="px-4 py-4">Tracking</th>
+                  <th className="px-4 py-4">Occlusion</th>
+                  <th className="px-4 py-4">State Δ</th>
+                  <th className="px-4 py-4">Partial obs</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800">
                 {[
-                  ["Gemini 2.5 Pro", "—", "—", "—", "—"],
-                  ["Claude Opus 4.7", "—", "—", "—", "—"],
-                  ["GPT-4o", "—", "—", "—", "—"],
-                  ["Qwen2.5-VL-7B (base)", "—", "—", "—", "—"],
-                  ["Qwen2.5-VL-7B (LoRA, ours)", "—", "—", "—", "—", true],
-                ].map(([model, ...rest], i) => {
-                  const isOurs = rest[rest.length - 1] === true;
-                  const cells = isOurs ? rest.slice(0, -1) : rest;
-                  return (
-                    <tr
-                      key={i}
-                      className={isOurs ? "bg-accent/5 text-chalk" : "text-zinc-300"}
-                    >
-                      <td className="px-6 py-4 font-medium">{model as string}</td>
-                      {cells.map((c, j) => (
-                        <td key={j} className="px-6 py-4 font-mono">
-                          {c as string}
-                        </td>
-                      ))}
-                    </tr>
-                  );
-                })}
+                  ["Gemini 2.5 Pro"],
+                  ["Claude Opus 4.7"],
+                  ["GPT-4o"],
+                  ["Qwen2.5-VL-7B (base)"],
+                  ["Qwen2.5-VL-7B (LoRA, ours)", true],
+                ].map(([model, isOurs], i) => (
+                  <tr
+                    key={i}
+                    className={isOurs ? "bg-accent/5 text-chalk" : "text-zinc-300"}
+                  >
+                    <td className="px-4 py-4 font-medium">{model as string}</td>
+                    {Array.from({ length: 6 }).map((_, j) => (
+                      <td key={j} className="px-4 py-4 font-mono text-zinc-500">—</td>
+                    ))}
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
 
           <p className="mt-4 text-xs text-zinc-500">
-            Judge: Claude Opus 4.7. Scores are 0 / 0.5 / 1 with a strict
-            rubric for part-level correctness.
+            Judge: Claude Opus 4.7. Scores are 0 / 0.5 / 1. Eval set: held-out
+            clip 12 (downtime_prep), 80–100 human-verified questions.
           </p>
         </div>
       </section>
@@ -292,12 +331,12 @@ export default function Home() {
             </div>
             <p className="mt-3 text-sm text-zinc-400">
               Built in 36 hours for the Caltech × Ironsite hackathon. MIT
-              licensed.
+              licensed. Source footage © Ironsite.
             </p>
           </div>
           <div>
             <p className="font-mono text-xs uppercase tracking-widest text-zinc-500">
-              Code + data
+              Code
             </p>
             <ul className="mt-3 space-y-2 text-sm">
               <li>
@@ -306,13 +345,13 @@ export default function Home() {
                 </a>
               </li>
               <li>
-                <a href={DATASET_URL} target="_blank" rel="noreferrer" className="text-zinc-300 hover:text-chalk">
-                  HOVA-500K on HuggingFace →
+                <a href={`${REPO_URL}/blob/main/infra/vultr/README.md`} target="_blank" rel="noreferrer" className="text-zinc-300 hover:text-chalk">
+                  Vultr deployment runbook →
                 </a>
               </li>
               <li>
-                <a href={PAPER_URL} target="_blank" rel="noreferrer" className="text-zinc-300 hover:text-chalk">
-                  GLOVER++ paper →
+                <a href={`${REPO_URL}/blob/main/training/FREE_FINETUNING.md`} target="_blank" rel="noreferrer" className="text-zinc-300 hover:text-chalk">
+                  Free-GPU fallback path →
                 </a>
               </li>
             </ul>
