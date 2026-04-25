@@ -1,0 +1,36 @@
+# API keys — never commit
+.env
+
+# Large data files
+data/raw/
+data/frames/
+data/masks/
+data/depth/
+
+# Model checkpoints and weights
+checkpoints/
+*.pt
+*.bin
+*.safetensors
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Experiment artifacts (keep results/ but ignore large dumps)
+*.npy
+*.npz
