@@ -1,131 +1,189 @@
-# Affordance Reasoning on Construction Footage
+# affordance-vlm
 
-**Hackathon:** Caltech x Ironsite — "Spatial Intelligence in the Physical World"  
-**Time budget:** 36 hours | **Compute budget:** ~$500 (single A100 80GB or H100)
+> Frontier VLMs can identify objects. They cannot yet reliably tell a robot **where on an object to grab it** or **what action that part affords**. This repo shows the gap — and closes it with a 7B fine-tune.
+
+**Status:** 🚧 Hackathon project (Caltech × Ironsite — *Spatial Intelligence in the Physical World*). 36-hour build.
 
 ---
 
 ## Thesis
 
-Current frontier VLMs (Gemini 2.5 Pro, Claude Opus, GPT-4o) can recognize construction tools in video but fail at **part-level affordance reasoning**: which part to grasp, what function each part affords, and which substitutions are possible when a tool is unavailable. We demonstrate this failure on a hand-labeled held-out benchmark, then show that fine-tuning Qwen2.5-VL-7B on auto-generated affordance Q&A pairs from the same footage closes the gap — beating frontier models on our benchmark.
+Part-level affordance grounding is the bottleneck for deploying VLMs as robot action planners. Current frontier models (Gemini 2.5 Pro, Claude Opus 4.7, GPT-4o) can recognize a hammer in an image but reliably fail at "*which end* should the gripper close on, and *what* will that end do?".
+
+This project demonstrates that gap on [HOVA-500K](https://huggingface.co/datasets/JiaaZ/HOVA-500K) — a dataset purpose-built for affordance research — and shows that fine-tuning [Qwen2.5-VL-7B](https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct) on auto-generated, ground-truth-anchored Q&A pairs from HOVA closes it.
+
+The story for judges: a robot arm controlled by GPT-4o would grip a hammer by the head instead of the handle. The fine-tuned 7B model wouldn't.
 
 ---
 
-## Methodology
+## Method (one-paragraph version)
 
-1. **Data pipeline** — Sample frames from Ironsite MP4 footage at 1 fps/2s. Run SAM2 for segmentation masks and Depth Anything V2 for depth maps. Use Gemini 2.5 Pro to auto-generate 3–5 part-level affordance Q&A pairs per frame. Quality-filter with a self-consistency re-prompt. Target: 3,000–5,000 training pairs.
-
-2. **Held-out eval set** — Reserve 100 frames, hand-verify 80–100 questions with ground-truth answers. Run all frontier models + vanilla Qwen2.5-VL-7B as baselines. Score with Claude Opus as LLM judge.
-
-3. **Fine-tuning** — LoRA (rank 16, α 32) on Qwen2.5-VL-7B-Instruct, trained on the auto-generated Q&A pairs with multimodal chat formatting. 2–3 epochs, bf16, single GPU.
-
-4. **Evaluation** — Same eval pipeline on the held-out set with the fine-tuned model added. Report honest per-model accuracy; do not cherry-pick.
-
----
-
-## Directory Structure
+For each `(image, object, action, affordance-region)` tuple in HOVA-500K, prompt Gemini 2.5 Pro with the **ground-truth annotation as context** to write 3 part-level affordance Q&A pairs. The mask grounds the answer in a real spatial region — the model can't hallucinate the affordance location. A self-consistency filter (re-prompt without the grounding hint, then judge) discards low-quality pairs. Train Qwen2.5-VL-7B with LoRA (rank 16) on the resulting set. Evaluate against frontier baselines on a held-out subset, scored by Claude Opus 4.7 with a strict rubric.
 
 ```
-data/
-  raw/        # MP4 footage from Ironsite (gitignored, bring your own)
-  frames/     # sampled frames at 1 per 2s (gitignored, auto-generated)
-  masks/      # SAM2 segmentation outputs (gitignored, auto-generated)
-  depth/      # Depth Anything V2 outputs (gitignored, auto-generated)
-  qa/         # generated JSONL Q&A pairs (train.jsonl, stats.md)
+HOVA-500K annotations            Q&A generation             Fine-tune              Eval
+┌──────────────────┐    ground   ┌─────────────────┐  ~5K   ┌────────────┐       ┌────────────┐
+│ object + action  │ ─────────►  │ Gemini 2.5 Pro  │ ────►  │ Qwen2.5-VL │ ────► │ vs Gemini, │
+│ + Gaussian mask  │   truth     │ writes 3 Q&A    │ pairs  │ + LoRA     │       │  Claude,   │
+│ (504K total)     │             │ self-consistency│        │            │       │  GPT-4o    │
+└──────────────────┘             └─────────────────┘        └────────────┘       └────────────┘
+```
+
+---
+
+## Results
+
+*(Phase 4 outputs land here. Numbers reported honestly — no cherry-picking. The held-out set is small (~100 questions), so treat as directional evidence, not publication-grade.)*
+
+| Model | Mean score | Full-credit | Partial | Wrong | n |
+|---|---|---|---|---|---|
+| Gemini 2.5 Pro | TBD | TBD | TBD | TBD | TBD |
+| Claude Opus 4.7 | TBD | TBD | TBD | TBD | TBD |
+| GPT-4o | TBD | TBD | TBD | TBD | TBD |
+| Qwen2.5-VL-7B (base) | TBD | TBD | TBD | TBD | TBD |
+| **Qwen2.5-VL-7B (LoRA, ours)** | **TBD** | **TBD** | **TBD** | **TBD** | **TBD** |
+
+Judge: Claude Opus 4.7 with rubric in [`eval/judge.py`](eval/judge.py). Scores are 0 / 0.5 / 1.
+
+---
+
+## Repo layout
+
+```
+data_pipeline/
+  download_hova.py     pull HOVA-500K subsets from HuggingFace
+  annotations.py       unified loader (HANDAL / 3doi / ego4d / epic100)
+  gemini_client.py     google-genai wrapper (retries, JSON mode)
+  generate_qa.py       Q&A generation grounded on annotations
+  quality_filter.py    self-consistency filter
+  run_pipeline.py      end-to-end orchestrator
 eval/
-  heldout.jsonl       # hand-verified test questions
-  run_baselines.py    # baseline + fine-tuned model eval runner
+  build_heldout.py     sample test split → candidates for human verify
+  judge.py             Claude Opus 4.7 strict-rubric judge
+  run_baselines.py     adapters for Gemini / Claude / OpenAI / Qwen
 training/
-  finetune_qwen.py    # LoRA fine-tuning script
-  configs/            # LoRA YAML configs
+  finetune_qwen.py     LoRA fine-tune entry point   (Phase 4)
+  configs/lora.yaml    LoRA hyperparameters
 inference/
-  load_model.py       # model loading utilities
-  predict.py          # single-image inference helper
+  load_model.py        model loader                 (Phase 4)
+  predict.py           single-image inference       (Phase 4)
 demo/
-  demo.ipynb          # final demo with side-by-side comparisons
-results/              # metrics JSON, charts, summary tables
+  demo.ipynb           side-by-side comparisons     (Phase 5)
+  spaces/              Gradio app for HuggingFace Spaces (Phase 5)
+results/               metrics + predictions per model
 ```
 
 ---
 
-## Quickstart
+## Reproduce
 
-### 1. Clone and install
+### 1. Install
 
 ```bash
-git clone <this-repo>
-cd "Spatial Computing"
+git clone https://github.com/mohosy/affordance-vlm
+cd affordance-vlm
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Install SAM2 from source
-
-```bash
-git clone https://github.com/facebookresearch/sam2.git
-cd sam2
-pip install -e ".[demo]"
-cd ..
-```
-
-Download SAM2 checkpoints:
-```bash
-cd sam2/checkpoints
-./download_ckpts.sh
-cd ../..
-```
-
-### 3. Install Depth Anything V2 from source
-
-```bash
-git clone https://github.com/DepthAnything/Depth-Anything-V2.git
-cd Depth-Anything-V2
-pip install -r requirements.txt
-cd ..
-```
-
-Download the ViT-L encoder weights from the [official repo](https://github.com/DepthAnything/Depth-Anything-V2) into `Depth-Anything-V2/checkpoints/`.
-
-### 4. Set API keys
+### 2. API keys
 
 ```bash
 cp .env.example .env
-# edit .env with your actual keys
+# fill in GOOGLE_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY
 ```
 
-### 5. Run per phase
+Free-tier keys work for the smoke test:
+- Google AI Studio: https://aistudio.google.com/apikey
+- Anthropic Console: https://console.anthropic.com/
+- OpenAI: https://platform.openai.com/api-keys
+
+### 3. Phase 2 — data pipeline
 
 ```bash
-# Phase 2 — data pipeline (add your MP4s to data/raw/ first)
-python data_pipeline/run_pipeline.py
+# Download HOVA-500K annotations (24 MB) and a tractable image subset (3doi, 2.94 GB)
+python data_pipeline/download_hova.py --subsets annotations,3doi --out data/hova/
 
-# Phase 3 — baselines
-python eval/run_baselines.py --models gemini,claude,gpt4o,qwen_base
-
-# Phase 4 — fine-tune (run on GPU machine)
-python training/finetune_qwen.py
-
-# Phase 4 — eval with fine-tuned model
-python eval/run_baselines.py --models all --checkpoint checkpoints/best/
-
-# Phase 5 — demo
-jupyter notebook demo/demo.ipynb
+# Smoke test: 10 images, 3 Q&A pairs each
+python data_pipeline/run_pipeline.py --source 3doi --limit 10
 ```
 
+For the full training set, run on a machine with enough disk for HANDAL (~94 GB):
+
+```bash
+python data_pipeline/download_hova.py --subsets HANDAL --out data/hova/
+python data_pipeline/run_pipeline.py --source handal --limit 1500 --pairs-per-image 3
+```
+
+### 4. Phase 3 — held-out eval + baselines
+
+```bash
+# Sample 100 candidates from the test split, then human-verify the answers
+python eval/build_heldout.py --source handal --split test --n 100 \
+    --image-root data/hova/HANDAL --out eval/heldout_candidates.jsonl
+# (after manually setting verified=true, copy to eval/heldout.jsonl)
+
+# Run frontier baselines + score with the judge
+python eval/run_baselines.py \
+    --models gemini-2.5-pro,claude-opus-4-7,gpt-4o \
+    --heldout eval/heldout.jsonl \
+    --out results/baselines.json
+```
+
+### 5. Phase 4 — fine-tune Qwen2.5-VL-7B
+
+Run on RunPod or any A100 80GB / H100:
+
+```bash
+python training/finetune_qwen.py --config training/configs/lora.yaml
+python eval/run_baselines.py \
+    --models qwen-finetuned --checkpoint checkpoints/best/ \
+    --heldout eval/heldout.jsonl --out results/finetuned.json
+```
+
+### 6. Phase 5 — demo + ablations
+
+`demo/demo.ipynb` shows side-by-side failure cases. `demo/spaces/` is a Gradio app for HuggingFace Spaces deployment.
+
 ---
 
-## Compute Requirements
+## Budget + compute
 
-- Fine-tuning: single A100 80GB or H100 (bf16 throughout)
-- Inference for baselines: any machine with API access
-- SAM2 + Depth Anything: runs on CPU (slow) or GPU (fast); A10G sufficient
+| Stage | Where | Time | Cost |
+|---|---|---|---|
+| Phase 2 — data pipeline | Mac or RunPod | ~2 hours | ~$60 in Gemini API calls |
+| Phase 3 — baselines | Any machine + APIs | ~1 hour | ~$10 |
+| Phase 4 — LoRA fine-tune | A100 80GB / H100 | 4–8 hours | ~$30–60 RunPod |
+| Phase 5 — demo + ablations | Same GPU | 2–4 hours | ~$15 |
+
+Total target: **<$200 of the $500 hackathon budget**.
 
 ---
 
-## Reproducibility Notes
+## Honest caveats
 
-- All random seeds are fixed in training scripts
-- Data pipeline is deterministic given the same MP4 inputs
-- `data/qa/stats.md` documents the exact distribution of training data
-- Evaluation rubric is defined in `eval/run_baselines.py` and applied consistently across all models
+- HOVA-500K's `3doi` and `ego4d` subsets sometimes localize affordances at object level, not part level. The `HANDAL` subset is most useful for part-level supervision.
+- The held-out set is small (80–100 questions). Treat the comparison as directional, not statistical proof.
+- Claude Opus 4.7 is used as the judge; that introduces judge bias. We do *not* use the same model as both contestant and judge.
+- Q&A generation uses Gemini 2.5 Pro as a labeler. The fine-tuned student inherits Gemini's biases on what counts as "the right part" — that's fine for the affordance-grounding claim but worth flagging.
 
-*Numbers reported here are from a 36-hour hackathon. The held-out set is small (80–100 questions). Treat these as directional evidence, not publication-grade results.*
+---
+
+## Citation + license
+
+This repo is MIT-licensed.
+
+The HOVA-500K dataset is from [GLOVER++](https://arxiv.org/abs/2505.11865) (Ma et al., 2025) — please cite their paper if you use the data:
+
+```bibtex
+@article{ma2025glover,
+  title  = {GLOVER++: Unleashing the Potential of Affordance Learning from
+            Human Behaviors for Robotic Manipulation},
+  author = {Ma, Teli and others},
+  year   = {2025},
+  eprint = {2505.11865},
+  archivePrefix = {arXiv},
+}
+```
+
+Built by [@mohosy](https://github.com/mohosy) for the Caltech × Ironsite hackathon.

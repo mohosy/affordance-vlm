@@ -6,12 +6,18 @@ data/raw/
 data/frames/
 data/masks/
 data/depth/
+data/hova/
 
 # Model checkpoints and weights
 checkpoints/
 *.pt
 *.bin
 *.safetensors
+
+# Virtual environments
+.venv/
+venv/
+env/
 
 # Python
 __pycache__/
