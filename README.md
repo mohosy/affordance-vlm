@@ -94,7 +94,9 @@ data_pipeline/
   extract_frames.py         ffmpeg sampler (1 fps/2s) + manifest writer
   build_sequences.py        group frames into temporal windows
   generate_qa_temporal.py   multi-frame Q&A generation (Big Swing)
-  gemini_client.py          google-genai wrapper with retries
+  labelers.py               provider-agnostic OpenAI / Anthropic / Gemini
+                            wrappers used for Q&A generation
+  gemini_client.py          legacy google-genai wrapper (single-frame path)
   # legacy single-frame HOVA pipeline (not on the main path):
   annotations.py / download_hova.py / generate_qa.py / quality_filter.py
 eval/
@@ -146,16 +148,19 @@ python data_pipeline/build_sequences.py --holdout-clip 12
 
 ```bash
 cp .env.example .env
-# fill in GOOGLE_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY
+# fill in OPENAI_API_KEY (used as the labeler — GPT-4o)
+# and ANTHROPIC_API_KEY (used as the judge — Claude Opus 4.7)
+# GOOGLE_API_KEY is optional, only needed if you want Gemini in the eval baselines
 ```
 
 ### 4. Phase 2b — generate temporal training Q&A
 
 ```bash
+# Default labeler is OpenAI / GPT-4o; swap with --labeler claude or --labeler gemini.
 python data_pipeline/generate_qa_temporal.py \
     --sequences data/sequences/sequences.jsonl \
     --out data/qa/train_temporal.jsonl \
-    --pairs-per-sequence 3 --shuffle
+    --pairs-per-sequence 3 --shuffle --labeler openai
 ```
 
 ### 5. Phase 3 — held-out eval

@@ -31,7 +31,7 @@ from tqdm import tqdm
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from data_pipeline.gemini_client import GeminiClient  # noqa: E402
+from data_pipeline.labelers import make_labeler  # noqa: E402
 from data_pipeline.generate_qa_temporal import generate_for_sequence  # noqa: E402
 
 log = logging.getLogger(__name__)
@@ -46,7 +46,10 @@ def main() -> int:
                         help="Number of held-out sequences to sample.")
     parser.add_argument("--pairs-per-sequence", type=int, default=1)
     parser.add_argument("--seed", type=int, default=12345)
-    parser.add_argument("--model", type=str, default="gemini-2.5-pro")
+    parser.add_argument("--labeler", type=str, default="openai",
+                        help="Labeler provider: openai | anthropic/claude | gemini/google")
+    parser.add_argument("--model", type=str, default=None,
+                        help="Override default model id; defaults vary by provider.")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO,
@@ -67,14 +70,15 @@ def main() -> int:
     random.Random(args.seed).shuffle(sequences)
     sequences = sequences[: args.n]
     print(f"[info] sampled {len(sequences)} held-out sequences from {args.sequences}")
+    print(f"[info] labeler={args.labeler} model={args.model or 'default'}")
 
-    client = GeminiClient(model=args.model)
+    labeler = make_labeler(args.labeler, model=args.model)
     n_written = 0
     with jsonlines.open(args.out, mode="w") as writer:
         for seq in tqdm(sequences, desc="heldout"):
             try:
                 pairs = generate_for_sequence(
-                    client=client,
+                    labeler=labeler,
                     seq=seq,
                     n_pairs=args.pairs_per_sequence,
                 )

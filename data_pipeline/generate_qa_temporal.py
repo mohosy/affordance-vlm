@@ -40,7 +40,8 @@ from tqdm import tqdm
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from data_pipeline.gemini_client import GeminiClient  # noqa: E402
+from data_pipeline.gemini_client import GeminiClient  # noqa: E402  kept for back-compat
+from data_pipeline.labelers import LabelerClient, make_labeler  # noqa: E402
 
 log = logging.getLogger(__name__)
 
@@ -93,8 +94,16 @@ Hard answer rules:
 - If a question genuinely cannot be answered from the sequence, drop it
   and replace with a different one.
 
-Output: one JSON array, no surrounding prose. Each element:
-  {"question": "...", "answer": "...", "type": "<category>"}
+Output format (STRICT — must be valid JSON, no surrounding prose):
+  {"pairs": [
+    {"question": "...", "answer": "...", "type": "<category>"},
+    {"question": "...", "answer": "...", "type": "<category>"},
+    ...
+  ]}
+
+The "pairs" array MUST contain exactly the number of Q&A objects requested
+in the user message. Do not return a single Q&A object; always wrap inside
+the "pairs" array.
 """
 
 
@@ -121,60 +130,81 @@ def _build_user_text(seq: dict, n_pairs: int) -> str:
         f"activity tags: {activity}, ~{duration} seconds total).\n\n"
         f"Frames are presented above in order, each preceded by a label "
         f"\"Frame K (t=...s):\". The first frame is the earliest in time.\n\n"
-        f"Generate exactly {n_pairs} temporal Q&A pairs that REQUIRE looking "
-        f"at multiple frames. Mix across the categories. Drop any question "
-        f"that could be answered from a single frame."
+        f"Return a JSON object of the form {{\"pairs\": [...]}} where "
+        f"\"pairs\" contains EXACTLY {n_pairs} temporal Q&A pair objects "
+        f"that REQUIRE looking at multiple frames. Mix across categories. "
+        f"Drop any question that could be answered from a single frame."
     )
 
 
 def generate_for_sequence(
-    client: GeminiClient,
+    labeler: LabelerClient | GeminiClient,
     seq: dict,
     n_pairs: int,
 ) -> list[dict]:
-    """Returns list of {question, answer, type} dicts."""
-    from google.genai import types as gtypes
-    contents: list = []
-    for i, frame in enumerate(seq["frames"], start=1):
-        contents.append(f"Frame {i} (t={frame['timestamp_sec']:.1f}s):")
-        contents.append(_frame_part_for_gemini(Path(frame["frame_path"])))
-    contents.append(_build_user_text(seq, n_pairs))
+    """Returns list of {question, answer, type} dicts.
 
-    config = gtypes.GenerateContentConfig(
-        system_instruction=SYSTEM_INSTRUCTION,
-        temperature=0.7,
-        response_mime_type="application/json",
-    )
-    # Use the underlying client directly so we can pass mixed text+image lists
-    last_err = None
-    for attempt in range(client.max_retries):
-        try:
-            resp = client.client.models.generate_content(
-                model=client.model,
-                contents=contents,
-                config=config,
-            )
-            text = (resp.text or "").strip()
-            if text.startswith("```"):
-                text = text.strip("`")
-                if text.startswith("json"):
-                    text = text[4:]
-                text = text.strip()
-            parsed = json.loads(text)
-            break
-        except Exception as e:
-            last_err = e
-            wait = (2 ** attempt) + 0.5
-            log.warning("gemini call failed (attempt %d/%d): %s — sleep %.1fs",
-                        attempt + 1, client.max_retries, e, wait)
-            import time as _time
-            _time.sleep(wait)
+    ``labeler`` is a LabelerClient (preferred) — any of OpenAILabeler,
+    AnthropicLabeler, GeminiLabeler. The legacy GeminiClient is also
+    accepted for back-compat with eval/build_heldout_temporal.py callers.
+    """
+    user_text = _build_user_text(seq, n_pairs)
+    frame_paths = [Path(f["frame_path"]) for f in seq["frames"]]
+    timestamps = [float(f["timestamp_sec"]) for f in seq["frames"]]
+
+    if isinstance(labeler, LabelerClient):
+        parsed = labeler.generate_temporal_qa(
+            system_instruction=SYSTEM_INSTRUCTION,
+            user_text=user_text,
+            frame_paths=frame_paths,
+            timestamps=timestamps,
+            temperature=0.7,
+        )
     else:
-        assert last_err is not None
-        raise last_err
-
-    if not isinstance(parsed, list):
-        raise ValueError(f"expected JSON array, got {type(parsed).__name__}")
+        # Back-compat: legacy GeminiClient direct call
+        from google.genai import types as gtypes
+        contents: list = []
+        for i, frame in enumerate(seq["frames"], start=1):
+            contents.append(f"Frame {i} (t={frame['timestamp_sec']:.1f}s):")
+            contents.append(_frame_part_for_gemini(Path(frame["frame_path"])))
+        contents.append(user_text)
+        last_err = None
+        for attempt in range(labeler.max_retries):
+            try:
+                resp = labeler.client.models.generate_content(
+                    model=labeler.model,
+                    contents=contents,
+                    config=gtypes.GenerateContentConfig(
+                        system_instruction=SYSTEM_INSTRUCTION,
+                        temperature=0.7,
+                        response_mime_type="application/json",
+                    ),
+                )
+                text = (resp.text or "").strip()
+                if text.startswith("```"):
+                    text = text.strip("`")
+                    if text.startswith("json"):
+                        text = text[4:]
+                    text = text.strip()
+                parsed = json.loads(text)
+                break
+            except Exception as e:
+                last_err = e
+                wait = (2 ** attempt) + 0.5
+                log.warning("legacy-gemini call failed (attempt %d/%d): %s",
+                            attempt + 1, labeler.max_retries, e)
+                import time as _time
+                _time.sleep(wait)
+        else:
+            assert last_err is not None
+            raise last_err
+        if isinstance(parsed, dict):
+            for v in parsed.values():
+                if isinstance(v, list):
+                    parsed = v
+                    break
+        if not isinstance(parsed, list):
+            raise ValueError(f"expected JSON array, got {type(parsed).__name__}")
 
     out: list[dict] = []
     for item in parsed:
@@ -196,8 +226,11 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--shuffle", action="store_true")
-    parser.add_argument("--model", type=str,
-                        default=os.environ.get("GEMINI_MODEL", "gemini-2.5-pro"))
+    parser.add_argument("--labeler", type=str, default="openai",
+                        help="Labeler provider: openai | anthropic/claude | gemini/google")
+    parser.add_argument("--model", type=str, default=None,
+                        help="Override the default model id for the labeler. "
+                             "Defaults: gpt-4o / claude-opus-4-7 / gemini-2.5-pro")
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
 
@@ -223,10 +256,11 @@ def main() -> int:
     if args.limit:
         sequences = sequences[: args.limit]
 
-    print(f"[info] generating Q&A for {len(sequences)} sequences "
-          f"({args.pairs_per_sequence} pairs each) -> {args.out}")
+    print(f"[info] labeler={args.labeler} model={args.model or 'default'} "
+          f"sequences={len(sequences)} pairs/seq={args.pairs_per_sequence}")
+    print(f"[info] writing -> {args.out}")
 
-    client = GeminiClient(model=args.model)
+    labeler = make_labeler(args.labeler, model=args.model)
 
     n_written = 0
     n_failed = 0
@@ -234,7 +268,7 @@ def main() -> int:
         for seq in tqdm(sequences, desc="generate"):
             try:
                 pairs = generate_for_sequence(
-                    client=client,
+                    labeler=labeler,
                     seq=seq,
                     n_pairs=args.pairs_per_sequence,
                 )

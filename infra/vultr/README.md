@@ -81,15 +81,17 @@ python data_pipeline/build_sequences.py --holdout-clip 12
 ```bash
 tmux new -s qa
 source .venv/bin/activate
+# Default labeler is OpenAI / GPT-4o; pass --labeler claude or --labeler
+# gemini if you have those keys instead.
 python data_pipeline/generate_qa_temporal.py \
     --sequences data/sequences/sequences.jsonl \
     --out data/qa/train_temporal.jsonl \
-    --pairs-per-sequence 3 --shuffle
+    --pairs-per-sequence 3 --shuffle --labeler openai
 # detach: Ctrl-B then D
 ```
 
-Estimated cost: ~$10 in Gemini API calls for 603 sequences × 3 Q&A pairs.
-Estimated wall-clock: ~30-60 minutes.
+Estimated cost: ~$8-12 in OpenAI API calls for 603 sequences × 3 Q&A pairs
+on GPT-4o (similar on Claude Opus 4.7). Estimated wall-clock: ~30-50 min.
 
 ## 5 — Build held-out eval candidates
 

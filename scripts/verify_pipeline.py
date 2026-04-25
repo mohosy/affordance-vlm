@@ -254,7 +254,9 @@ def check_temporal_prompt_assembly() -> None:
     text = _build_user_text(seq, n_pairs=3)
     assert "chronological frames" in text
     assert "construction body cam" in text
-    assert "exactly 3" in text
+    assert "EXACTLY 3" in text or "exactly 3" in text.lower(), \
+        "user text must specify exact pair count"
+    assert "pairs" in text, "user text must request the JSON wrapper field"
     assert "object_permanence" in SYSTEM_INSTRUCTION
     assert "tracking" in SYSTEM_INSTRUCTION
     assert "occlusion" in SYSTEM_INSTRUCTION
